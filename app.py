@@ -6,7 +6,7 @@ import streamlit as st
 # Streamlit Page Configuration
 st.set_page_config(
     page_title="Atlantic Aviation Fee Scraper",
-    page_icon="✈️",
+    page_icon="✈️️",
     layout="wide",
 )
 
@@ -60,7 +60,8 @@ def parse_fee_payload(item):
     if isinstance(item, dict):
         # 1. Check for explicit string message fields returned in Atlantic's JSON payload
         msg = (
-            item.get("hourlyParkingMessage")
+            item.get("hourlyHangarMessage")
+            or item.get("hourlyParkingMessage")
             or item.get("dailyParkingMessage")
             or item.get("parkingMessage")
             or item.get("hangarMessage")
@@ -196,7 +197,7 @@ def fetch_airport_fees(code, model_id, date_val):
                 st.subheader(f"Raw Response Payload for {code}:")
                 st.json(data)
 
-            # Direct key extractions including new Message fields
+            # Direct key extractions with exact API key names
             facility_raw = (
                 data.get("facilityFee")
                 or data.get("FacilityFee")
@@ -209,7 +210,8 @@ def fetch_airport_fees(code, model_id, date_val):
             )
 
             hangar_raw = (
-                data.get("hangarMessage")
+                data.get("hourlyHangarMessage")
+                or data.get("hangarMessage")
                 or data.get("hangarFee")
                 or data.get("hangarFees")
                 or data.get("hangar")
@@ -241,7 +243,7 @@ def fetch_airport_fees(code, model_id, date_val):
 
             # Recursive search fallback if direct key lookups return N/A
             if hangar_res == "N/A":
-                hangar_res = find_key_recursive(data, ["hangar"])
+                hangar_res = find_key_recursive(data, ["hourlyhangar", "hangar"])
             if facility_res == "N/A":
                 facility_res = find_key_recursive(data, ["facility"])
             if security_res == "N/A":
