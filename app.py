@@ -5,22 +5,18 @@ import streamlit as st
 
 # Streamlit Page Config
 st.set_page_config(
-    page_title="Atlantic Aviation Fee Scraper", page_icon="✈️️", layout="wide"
+    page_title="Atlantic Aviation Fee Scraper", page_icon="✈", layout="wide"
 )
 
 st.title("✈️ Atlantic Aviation Lear 75 Detailed Fee Scraper")
 st.write(
-    "Direct API scraper targeting Atlantic Aviation's Umbraco backend endpoint to extract Facility, Gallons, Hangar, Security, and Parking fees."
+    "Direct API scraper targeting Atlantic Aviation's Umbraco backend endpoint for ABQ and TUL airports."
 )
 
-# Complete list of 107 Atlantic Aviation airport codes
+# Filtered list of airports (ABQ & TUL only)
 AIRPORT_CODES = [
     "ABQ",
     "TUL",
-    "TUS",
-    "UAO",
-    "UES",
-    "6N5",
 ]
 
 # Sidebar Parameters
@@ -42,7 +38,14 @@ def extract_price_value(item):
         price = item.get("unitPrice") or item.get("amount") or item.get("price")
         comment = item.get("comment") or item.get("rateComment") or ""
         if price is not None and price != 0:
-            return f"${price:,.0f}" if price == int(price) else f"${price:,.2f}"
+            formatted_price = (
+                f"${price:,.0f}" if price == int(price) else f"${price:,.2f}"
+            )
+            return (
+                f"{formatted_price} {comment}".strip()
+                if comment
+                else formatted_price
+            )
         return comment if comment else "N/A"
     elif isinstance(item, (int, float)):
         return f"${item:,.0f}" if item == int(item) else f"${item:,.2f}"
@@ -71,8 +74,9 @@ def extract_gallons_value(item):
 
 
 def extract_text_value(item):
-    """Safely extracts text descriptions, hourly rates (e.g. '$377 plus $31/hr'), or comments."""
+    """Extracts base price and combines it with hourly comments (e.g., '$377 plus $31/hr')."""
     if isinstance(item, dict):
+        price = item.get("unitPrice") or item.get("amount") or item.get("price")
         comment = (
             item.get("comment")
             or item.get("rateComment")
@@ -80,14 +84,26 @@ def extract_text_value(item):
             or item.get("formattedRate")
             or item.get("value")
             or item.get("label")
+            or ""
         )
-        if comment and isinstance(comment, str) and comment.strip():
-            return comment.strip()
 
-        price = item.get("unitPrice") or item.get("amount") or item.get("price")
+        base_str = ""
         if price is not None and price != 0:
-            return f"${price:,.0f}" if price == int(price) else f"${price:,.2f}"
+            base_str = (
+                f"${price:,.0f}" if price == int(price) else f"${price:,.2f}"
+            )
+
+        if base_str and comment:
+            if base_str in str(comment):
+                return str(comment).strip()
+            return f"{base_str} {comment}".strip()
+        elif base_str:
+            return base_str
+        elif comment:
+            return str(comment).strip()
+
         return "N/A"
+
     elif isinstance(item, (int, float)):
         return f"${item:,.0f}" if item == int(item) else f"${item:,.2f}"
     elif isinstance(item, str) and item.strip():
@@ -104,13 +120,14 @@ def find_in_data(data, keywords):
                 if val is not None:
                     return val
 
-        # 2. Check label/name/comment fields inside a dictionary object
+        # 2. Check label/name/comment/type fields inside a dictionary object
         comment = (
             data.get("comment")
             or data.get("rateComment")
             or data.get("name")
             or data.get("label")
             or data.get("title")
+            or data.get("type")
             or ""
         )
         if any(kw.lower() in str(comment).lower() for kw in keywords):
