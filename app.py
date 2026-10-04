@@ -6,7 +6,7 @@ import streamlit as st
 # Streamlit Page Configuration
 st.set_page_config(
     page_title="Atlantic Aviation Fee Scraper",
-    page_icon="✈️️",
+    page_icon="✈",
     layout="wide",
 )
 
