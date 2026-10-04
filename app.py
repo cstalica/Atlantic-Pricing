@@ -28,84 +28,30 @@ date_str = target_date.strftime("%Y-%m-%d")
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
-    "Referer": "https://www.atlanticaviation.com/locations/ABQ",
+    "Referer": "https://www.atlanticaviation.com/locations/ABQ#tripplanning",
 }
 
 
-def extract_price_value(item):
-    """Formats simple price values safely into a formatted string."""
-    if isinstance(item, dict):
-        price = (
-            item.get("unitPrice")
-            or item.get("amount")
-            or item.get("price")
-            or item.get("rate")
-        )
-        comment = item.get("comment") or item.get("rateComment") or ""
-        if price is not None and price != 0:
-            formatted_price = (
-                f"${price:,.0f}" if price == int(price) else f"${price:,.2f}"
-            )
-            return (
-                f"{formatted_price} {comment}".strip()
-                if comment
-                else formatted_price
-            )
-        return str(comment).strip() if comment else "N/A"
-    elif isinstance(item, (int, float)):
-        return f"${item:,.0f}" if item == int(item) else f"${item:,.2f}"
-    elif isinstance(item, str) and item.strip():
-        return item.strip()
-    return "N/A"
-
-
-def extract_gallons_value(item):
-    """Extracts raw numeric gallon requirements without dollar signs as a string."""
-    if isinstance(item, dict):
-        gallons = (
-            item.get("unitPrice")
-            or item.get("amount")
-            or item.get("gallons")
-            or item.get("value")
-            or item.get("rate")
-        )
-        if gallons is not None:
-            return f"{int(gallons)}" if gallons == int(gallons) else f"{gallons}"
-        return str(item.get("comment", "N/A"))
-    elif isinstance(item, (int, float)):
-        return f"{int(item)}" if item == int(item) else f"{item}"
-    elif isinstance(item, str) and item.strip():
-        return item.strip()
-    return "N/A"
-
-
-def extract_composite_fee_as_string(item):
-    """
-    Recursively inspects and extracts base rates, hourly add-ons, or pre-formatted text
-    and guarantees a single formatted string return value.
-    """
+def extract_string_val(item):
+    """Safely extracts and cleans string values from any JSON data type."""
     if item is None:
         return "N/A"
 
-    # If the response is directly a string
     if isinstance(item, str):
         val = item.strip()
         return val if val else "N/A"
 
-    # If the response is a raw number
     if isinstance(item, (int, float)):
         return f"${item:,.0f}" if item == int(item) else f"${item:,.2f}"
 
-    # If the response is a list of fee objects or strings
     if isinstance(item, list):
         parts = []
         for sub in item:
-            extracted = extract_composite_fee_as_string(sub)
-            if extracted != "N/A" and extracted not in parts:
-                parts.append(extracted)
+            res = extract_string_val(sub)
+            if res != "N/A" and res not in parts:
+                parts.append(res)
         return " ".join(parts) if parts else "N/A"
 
-    # If the response is a dictionary object
     if isinstance(item, dict):
         base_price = (
             item.get("unitPrice")
@@ -144,15 +90,35 @@ def extract_composite_fee_as_string(item):
         elif comment_str:
             return comment_str
 
-        # Fallback check across all string values in the dict if standard keys fail
-        string_vals = [
-            str(v).strip()
-            for v in item.values()
-            if isinstance(v, (str, int, float)) and str(v).strip()
-        ]
-        if string_vals:
-            return " ".join(string_vals)
+        # Fallback to recursively extract all values in dict if primary keys miss
+        collected = []
+        for v in item.values():
+            extracted = extract_string_val(v)
+            if extracted != "N/A" and extracted not in collected:
+                collected.append(extracted)
+        if collected:
+            return " ".join(collected)
 
+    return "N/A"
+
+
+def extract_gallons_string(item):
+    """Extracts required gallons as a clean string without dollar formatting."""
+    if isinstance(item, dict):
+        gallons = (
+            item.get("unitPrice")
+            or item.get("amount")
+            or item.get("gallons")
+            or item.get("value")
+            or item.get("rate")
+        )
+        if gallons is not None:
+            return f"{int(gallons)}" if gallons == int(gallons) else f"{gallons}"
+        return extract_string_val(item.get("comment"))
+    elif isinstance(item, (int, float)):
+        return f"{int(item)}" if item == int(item) else f"{item}"
+    elif isinstance(item, str) and item.strip():
+        return item.strip()
     return "N/A"
 
 
@@ -174,8 +140,8 @@ def fetch_airport_fees(code, model_id, date_val):
                 data = response.json()
             except Exception:
                 return {
-                    "Airport Code": code,
-                    "Arrival Date": date_val,
+                    "Airport Code": str(code),
+                    "Arrival Date": str(date_val),
                     "Facility Fee": "Not Available",
                     "Gallons to Waive": "N/A",
                     "Hangar": "N/A",
@@ -183,6 +149,7 @@ def fetch_airport_fees(code, model_id, date_val):
                     "Regular Parking": "N/A",
                 }
 
+            # Inspect payload keys across all potential casing/naming conventions
             facility_raw = (
                 data.get("facilityFee")
                 or data.get("FacilityFee")
@@ -194,13 +161,17 @@ def fetch_airport_fees(code, model_id, date_val):
                 or data.get("WaiveGallons")
                 or data.get("gallonsNeeded")
             )
+
+            # Expanded key lookups specifically for hangar payloads
             hangar_raw = (
                 data.get("hangar")
                 or data.get("hangarFee")
                 or data.get("Hangar")
                 or data.get("hangarRate")
                 or data.get("hangarFacility")
+                or data.get("hangarFees")
             )
+
             security_raw = (
                 data.get("securityFee")
                 or data.get("SecurityFee")
@@ -217,13 +188,11 @@ def fetch_airport_fees(code, model_id, date_val):
             return {
                 "Airport Code": str(code),
                 "Arrival Date": str(date_val),
-                "Facility Fee": str(extract_price_value(facility_raw)),
-                "Gallons to Waive": str(extract_gallons_value(gallons_raw)),
-                "Hangar": str(extract_composite_fee_as_string(hangar_raw)),
-                "Security Fee": str(extract_price_value(security_raw)),
-                "Regular Parking": str(
-                    extract_composite_fee_as_string(parking_raw)
-                ),
+                "Facility Fee": extract_string_val(facility_raw),
+                "Gallons to Waive": extract_gallons_string(gallons_raw),
+                "Hangar": extract_string_val(hangar_raw),
+                "Security Fee": extract_string_val(security_raw),
+                "Regular Parking": extract_string_val(parking_raw),
             }
         else:
             return {
@@ -262,7 +231,7 @@ if st.button("🚀 Fetch Fee Data"):
 
     status_text.success("Scraping completed!")
 
-    # Force string dtype on DataFrame columns to prevent auto-conversion
+    # Explicitly cast entire DataFrame to string type to avoid Streamlit column inference issues
     df = pd.DataFrame(results).astype(str)
 
     st.dataframe(df, use_container_width=True)
