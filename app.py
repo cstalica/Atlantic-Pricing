@@ -36,15 +36,11 @@ HEADERS = {
 
 
 def parse_fee_payload(item):
-    """Recursively parses primitives, dicts, or lists from Atlantic's payload.
-
-    Cleans line breaks (\\n) into spaces and resolves direct message keys.
-    """
+    """Recursively parses primitives, dicts, or lists from Atlantic's payload."""
     if item is None:
         return "N/A"
 
     if isinstance(item, str):
-        # Clean newline characters (\n) and redundant spaces
         val = item.replace("\n", " ").strip()
         val = " ".join(val.split())
         return val if val else "N/A"
@@ -58,7 +54,6 @@ def parse_fee_payload(item):
         return " ".join(valid_items) if valid_items else "N/A"
 
     if isinstance(item, dict):
-        # 1. Check for explicit string message fields returned in Atlantic's JSON payload
         msg = (
             item.get("hourlyHangarMessage")
             or item.get("hourlyParkingMessage")
@@ -74,7 +69,6 @@ def parse_fee_payload(item):
         if msg:
             return parse_fee_payload(msg)
 
-        # 2. Reconstruct numeric base price + rate comment if split across dict keys
         base_price = (
             item.get("unitPrice")
             or item.get("amount")
@@ -112,7 +106,6 @@ def parse_fee_payload(item):
         elif comment_str:
             return parse_fee_payload(comment_str)
 
-        # 3. Fallback: traverse all dict values
         collected = []
         for v in item.values():
             extracted = parse_fee_payload(v)
@@ -122,6 +115,25 @@ def parse_fee_payload(item):
             return " ".join(collected)
 
     return "N/A"
+
+
+def extract_unit_price_only(item):
+    """Extracts strictly the numeric unitPrice formatted as currency."""
+    if isinstance(item, dict):
+        price = (
+            item.get("unitPrice")
+            or item.get("amount")
+            or item.get("price")
+            or item.get("value")
+        )
+        if price is not None:
+            return (
+                f"${price:,.0f}" if price == int(price) else f"${price:,.2f}"
+            )
+    elif isinstance(item, (int, float)):
+        return f"${item:,.0f}" if item == int(item) else f"${item:,.2f}"
+
+    return parse_fee_payload(item)
 
 
 def extract_gallons_string(item):
@@ -197,7 +209,6 @@ def fetch_airport_fees(code, model_id, date_val):
                 st.subheader(f"Raw Response Payload for {code}:")
                 st.json(data)
 
-            # Direct key extractions with exact API key names
             facility_raw = (
                 data.get("facilityFee")
                 or data.get("FacilityFee")
@@ -234,14 +245,15 @@ def fetch_airport_fees(code, model_id, date_val):
                 or data.get("parking")
             )
 
-            # Parse extracted raw values
             facility_res = parse_fee_payload(facility_raw)
             gallons_res = extract_gallons_string(gallons_raw)
             hangar_res = parse_fee_payload(hangar_raw)
-            security_res = parse_fee_payload(security_raw)
+
+            # Target unitPrice specifically for Security Fee
+            security_res = extract_unit_price_only(security_raw)
+
             parking_res = parse_fee_payload(parking_raw)
 
-            # Recursive search fallback if direct key lookups return N/A
             if hangar_res == "N/A":
                 hangar_res = find_key_recursive(data, ["hourlyhangar", "hangar"])
             if facility_res == "N/A":
