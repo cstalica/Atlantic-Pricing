@@ -16,11 +16,7 @@ st.write(
 )
 
 # Target Airports
-AIRPORT_CODES = [
-    "ABQ",
-
-]
-
+AIRPORT_CODES = ["ABQ", "TUL"]
 
 # Sidebar Parameters
 st.sidebar.header("Scraper Parameters")
@@ -249,13 +245,11 @@ def fetch_airport_fees(code, model_id, date_val):
                 or data.get("parking")
             )
 
-            facility_res = parse_fee_payload(facility_raw)
+            # Target unitPrice specifically for both Facility Fee and Security Fee
+            facility_res = extract_unit_price_only(facility_raw)
             gallons_res = extract_gallons_string(gallons_raw)
             hangar_res = parse_fee_payload(hangar_raw)
-
-            # Target unitPrice specifically for Security Fee
             security_res = extract_unit_price_only(security_raw)
-
             parking_res = parse_fee_payload(parking_raw)
 
             if hangar_res == "N/A":
