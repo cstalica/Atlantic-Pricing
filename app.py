@@ -32,58 +32,87 @@ HEADERS = {
 }
 
 
-def parse_fee_object(item):
+def extract_price_value(item):
+    """Formats numeric dollar amounts safely from dicts, floats, ints, or strings."""
+    if isinstance(item, dict):
+        price = (
+            item.get("unitPrice")
+            or item.get("amount")
+            or item.get("price")
+            or item.get("rate")
+        )
+        comment = item.get("comment") or item.get("rateComment") or ""
+        if price is not None and price != 0:
+            formatted_price = (
+                f"${price:,.0f}" if price == int(price) else f"${price:,.2f}"
+            )
+            return (
+                f"{formatted_price} {comment}".strip()
+                if comment
+                else formatted_price
+            )
+        return comment if comment else "N/A"
+    elif isinstance(item, (int, float)):
+        return f"${item:,.0f}" if item == int(item) else f"${item:,.2f}"
+    elif isinstance(item, str) and item.strip():
+        return item.strip()
+    return "N/A"
+
+
+def extract_gallons_value(item):
+    """Extracts raw numeric gallon requirements without dollar signs."""
+    if isinstance(item, dict):
+        gallons = (
+            item.get("unitPrice")
+            or item.get("amount")
+            or item.get("gallons")
+            or item.get("value")
+            or item.get("rate")
+        )
+        if gallons is not None:
+            return f"{int(gallons)}" if gallons == int(gallons) else f"{gallons}"
+        return item.get("comment", "N/A")
+    elif isinstance(item, (int, float)):
+        return f"{int(item)}" if item == int(item) else f"{item}"
+    elif isinstance(item, str) and item.strip():
+        return item.strip()
+    return "N/A"
+
+
+def extract_composite_fee(item):
     """
-    Parses a fee item or list of fee items to extract both base price and hourly/additional comments.
-    Combines unitPrice ($377) and rateComment ('plus $31/hr') into a unified string.
+    Extracts base dollar amounts ($377) and combines them with hourly rate comments ('plus $31/hr')
+    from any dictionary or list structure returned by Atlantic's API.
     """
     if not item:
         return "N/A"
 
-    # If the endpoint returns a list of items for a fee category
     if isinstance(item, list):
-        base_price = None
-        comment = ""
+        parts = []
         for sub in item:
-            if isinstance(sub, dict):
-                p = sub.get("unitPrice") or sub.get("amount") or sub.get("price")
-                c = (
-                    sub.get("rateComment")
-                    or sub.get("comment")
-                    or sub.get("description")
-                    or sub.get("formattedRate")
-                )
-                if p is not None and p > 0 and base_price is None:
-                    base_price = p
-                if c and not comment:
-                    comment = str(c).strip()
+            val = extract_composite_fee(sub)
+            if val != "N/A":
+                parts.append(val)
+        return " ".join(parts) if parts else "N/A"
 
-        base_str = (
-            f"${base_price:,.0f}"
-            if base_price and base_price == int(base_price)
-            else (f"${base_price:,.2f}" if base_price else "")
-        )
-
-        if base_str and comment:
-            if base_str in comment:
-                return comment
-            return f"{base_str} {comment}".strip()
-        return base_str if base_str else (comment if comment else "N/A")
-
-    # If the item is a dictionary
     if isinstance(item, dict):
+        # 1. Look for base numeric price across common Atlantic keys
         base_price = (
             item.get("unitPrice")
-            or item.get("basePrice")
             or item.get("amount")
             or item.get("price")
+            or item.get("basePrice")
+            or item.get("rate")
         )
+
+        # 2. Look for rate text/comment
         comment = (
             item.get("rateComment")
             or item.get("comment")
             or item.get("description")
             or item.get("formattedRate")
             or item.get("value")
+            or item.get("label")
             or ""
         )
 
@@ -114,25 +143,6 @@ def parse_fee_object(item):
     return "N/A"
 
 
-def extract_gallons_value(item):
-    """Extracts raw numeric gallon requirements without dollar signs."""
-    if isinstance(item, dict):
-        gallons = (
-            item.get("unitPrice")
-            or item.get("amount")
-            or item.get("gallons")
-            or item.get("value")
-        )
-        if gallons is not None:
-            return f"{int(gallons)}" if gallons == int(gallons) else f"{gallons}"
-        return item.get("comment", "N/A")
-    elif isinstance(item, (int, float)):
-        return f"{int(item)}" if item == int(item) else f"{item}"
-    elif isinstance(item, str) and item.strip():
-        return item.strip()
-    return "N/A"
-
-
 def fetch_airport_fees(code, model_id, date_val):
     api_url = "https://www.atlanticaviation.com/umbraco/api/FacilityLookup/Get"
     params = {
@@ -160,7 +170,7 @@ def fetch_airport_fees(code, model_id, date_val):
                     "Regular Parking": "N/A",
                 }
 
-            # Direct dictionary lookup with fallback parsing
+            # Direct dictionary lookups covering all possible payload key variations
             facility_raw = (
                 data.get("facilityFee")
                 or data.get("FacilityFee")
@@ -177,6 +187,7 @@ def fetch_airport_fees(code, model_id, date_val):
                 or data.get("hangarFee")
                 or data.get("Hangar")
                 or data.get("hangarRate")
+                or data.get("hangarFacility")
             )
             security_raw = (
                 data.get("securityFee")
@@ -194,11 +205,11 @@ def fetch_airport_fees(code, model_id, date_val):
             return {
                 "Airport Code": code,
                 "Arrival Date": date_val,
-                "Facility Fee": parse_fee_object(facility_raw),
+                "Facility Fee": extract_price_value(facility_raw),
                 "Gallons to Waive": extract_gallons_value(gallons_raw),
-                "Hangar": parse_fee_object(hangar_raw),
-                "Security Fee": parse_fee_object(security_raw),
-                "Regular Parking": parse_fee_object(parking_raw),
+                "Hangar": extract_composite_fee(hangar_raw),
+                "Security Fee": extract_price_value(security_raw),
+                "Regular Parking": extract_composite_fee(parking_raw),
             }
         else:
             return {
