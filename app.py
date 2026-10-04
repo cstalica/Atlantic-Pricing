@@ -18,9 +18,24 @@ st.write(
 # Target Airports
 AIRPORT_CODES = ["ABQ", "TUL"]
 
+# Model Name to Internal ID Mapping
+AIRCRAFT_MODELS = {
+    "Lear 75": "971",
+    "Lear 45": "968",
+    "Lear 60": "970",
+    "Citation Excel": "854",
+    "Challenger 300": "812",
+}
+
 # Sidebar Parameters
 st.sidebar.header("Scraper Parameters")
-make_model_id = st.sidebar.text_input("Lear 75 Model ID", "971")
+
+# Model selection dropdown on the left sidebar using "Lear 75"
+selected_model_name = st.sidebar.selectbox(
+    "Aircraft Model", options=list(AIRCRAFT_MODELS.keys()), index=0
+)
+make_model_id = AIRCRAFT_MODELS[selected_model_name]
+
 target_date = st.sidebar.date_input("Arrival Date", datetime.date.today())
 date_str = target_date.strftime("%Y-%m-%d")
 
@@ -245,7 +260,6 @@ def fetch_airport_fees(code, model_id, date_val):
                 or data.get("parking")
             )
 
-            # Target unitPrice specifically for both Facility Fee and Security Fee
             facility_res = extract_unit_price_only(facility_raw)
             gallons_res = extract_gallons_string(gallons_raw)
             hangar_res = parse_fee_payload(hangar_raw)
@@ -317,6 +331,6 @@ if st.button("🚀 Fetch Fee Data"):
     st.download_button(
         label="📥 Download Rates CSV",
         data=csv_bytes,
-        file_name=f"atlantic_lear75_rates_{target_date}.csv",
+        file_name=f"atlantic_rates_{target_date}.csv",
         mime="text/csv",
     )
