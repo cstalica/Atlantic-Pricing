@@ -114,14 +114,12 @@ AIRPORT_CODES = [
     "SUA",
     "SUN",
     "SWF",
-    "SXM",
     "TEB",
     "TRM",
     "TUL",
     "TUS",
     "UAO",
     "UES",
-    "6N5",
 ]
 
 # All Aircraft Models & Internal Umbraco IDs
