@@ -73,8 +73,53 @@ def extract_gallons_value(item):
     return "N/A"
 
 
+def extract_hangar_value(item):
+    """Explicitly combines the base unitPrice ($377) and comment ('plus $31/hr') for Hangar fees."""
+    if isinstance(item, dict):
+        base_price = (
+            item.get("unitPrice")
+            or item.get("basePrice")
+            or item.get("amount")
+            or item.get("price")
+        )
+        comment = (
+            item.get("rateComment")
+            or item.get("comment")
+            or item.get("description")
+            or item.get("formattedRate")
+            or item.get("value")
+            or ""
+        )
+
+        base_str = ""
+        if base_price is not None and base_price != 0:
+            base_str = (
+                f"${base_price:,.0f}"
+                if base_price == int(base_price)
+                else f"${base_price:,.2f}"
+            )
+
+        if base_str and comment:
+            # Avoid repeating the base price if the comment string already starts with or contains it
+            if base_str in str(comment):
+                return str(comment).strip()
+            return f"{base_str} {comment}".strip()
+        elif base_str:
+            return base_str
+        elif comment:
+            return str(comment).strip()
+
+        return "N/A"
+
+    elif isinstance(item, (int, float)):
+        return f"${item:,.0f}" if item == int(item) else f"${item:,.2f}"
+    elif isinstance(item, str) and item.strip():
+        return item.strip()
+    return "N/A"
+
+
 def extract_text_value(item):
-    """Extracts base price and combines it with hourly comments (e.g., '$377 plus $31/hr')."""
+    """Extracts base price and combines it with comments for parking or general text fields."""
     if isinstance(item, dict):
         price = item.get("unitPrice") or item.get("amount") or item.get("price")
         comment = (
@@ -198,7 +243,7 @@ def fetch_airport_fees(code, model_id, date_val):
             raw_hangar = find_in_data(
                 data, ["hangarFee", "hangarRate", "hangar"]
             )
-            hangar_fee = extract_text_value(raw_hangar)
+            hangar_fee = extract_hangar_value(raw_hangar)
 
             # 4. Security Fee
             raw_security = find_in_data(
