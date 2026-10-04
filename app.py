@@ -10,15 +10,15 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("✈️ Atlantic Aviation Detailed Fee Scraper")
+st.title("✈️️ Atlantic Aviation Detailed Fee Scraper")
 st.write(
-    "Direct API scraper targeting Atlantic Aviation's Umbraco backend endpoint for ABQ and TUL airports."
+    "Direct API scraper targeting Atlantic Aviation's Umbraco backend endpoint for ABQ and TUL airports across all aircraft models."
 )
 
 # Target Airports
 AIRPORT_CODES = ["ABQ", "TUL"]
 
-# Selected Aircraft Models & Internal Umbraco IDs
+# All Aircraft Models & Internal Umbraco IDs
 AIRCRAFT_MODELS = {
     "Lear 75": "971",
     "Challenger 300": "741",
@@ -28,17 +28,6 @@ AIRCRAFT_MODELS = {
 
 # Sidebar Parameters
 st.sidebar.header("Scraper Parameters")
-
-# Dropdown menu restricted strictly to requested models
-selected_model_name = st.sidebar.selectbox(
-    "Aircraft Model", options=list(AIRCRAFT_MODELS.keys()), index=3
-)
-
-# Allow manual override for model ID if needed for troubleshooting
-make_model_id = st.sidebar.text_input(
-    "Make/Model ID (Override if needed)",
-    value=AIRCRAFT_MODELS[selected_model_name],
-)
 
 target_date = st.sidebar.date_input("Arrival Date", datetime.date.today())
 # Formatted as MM/DD/YYYY (e.g., 10/04/2026)
@@ -195,7 +184,7 @@ def find_key_recursive(data, target_substrings):
     return "N/A"
 
 
-def fetch_airport_fees(code, model_id, date_val):
+def fetch_airport_fees(code, model_name, model_id, date_val):
     api_url = "https://www.atlanticaviation.com/umbraco/api/FacilityLookup/Get"
 
     params = {
@@ -217,7 +206,7 @@ def fetch_airport_fees(code, model_id, date_val):
             except Exception:
                 return {
                     "Airport Code": str(code),
-                    "Aircraft Model": selected_model_name,
+                    "Aircraft Model": model_name,
                     "Arrival Date": str(date_val),
                     "Facility Fee": "JSON Parsing Error",
                     "Gallons to Waive": "N/A",
@@ -227,7 +216,7 @@ def fetch_airport_fees(code, model_id, date_val):
                 }
 
             if show_raw_json:
-                st.subheader(f"Raw Response Payload for {code}:")
+                st.subheader(f"Raw Response Payload for {code} ({model_name}):")
                 st.json(data)
 
             facility_raw = (
@@ -285,7 +274,7 @@ def fetch_airport_fees(code, model_id, date_val):
 
             return {
                 "Airport Code": str(code),
-                "Aircraft Model": selected_model_name,
+                "Aircraft Model": model_name,
                 "Arrival Date": str(date_val),
                 "Facility Fee": str(facility_res),
                 "Gallons to Waive": str(gallons_res),
@@ -296,7 +285,7 @@ def fetch_airport_fees(code, model_id, date_val):
         else:
             return {
                 "Airport Code": str(code),
-                "Aircraft Model": selected_model_name,
+                "Aircraft Model": model_name,
                 "Arrival Date": str(date_val),
                 "Facility Fee": f"HTTP {response.status_code}",
                 "Gallons to Waive": "N/A",
@@ -308,7 +297,7 @@ def fetch_airport_fees(code, model_id, date_val):
     except Exception as e:
         return {
             "Airport Code": str(code),
-            "Aircraft Model": selected_model_name,
+            "Aircraft Model": model_name,
             "Arrival Date": str(date_val),
             "Facility Fee": f"Error: {str(e)}",
             "Gallons to Waive": "N/A",
@@ -319,27 +308,35 @@ def fetch_airport_fees(code, model_id, date_val):
 
 
 # Streamlit UI Execution
-if st.button("🚀 Fetch Fee Data"):
+if st.button("🚀 Fetch All Models Fee Data"):
     results = []
     progress_bar = st.progress(0)
     status_text = st.empty()
 
-    total = len(AIRPORT_CODES)
-    for idx, code in enumerate(AIRPORT_CODES):
-        status_text.text(f"Fetching {code} ({idx + 1}/{total})...")
-        fee_data = fetch_airport_fees(code, make_model_id, date_str)
-        results.append(fee_data)
-        progress_bar.progress((idx + 1) / total)
+    total_tasks = len(AIRPORT_CODES) * len(AIRCRAFT_MODELS)
+    current_task = 0
 
-    status_text.success("Scraping completed!")
+    for code in AIRPORT_CODES:
+        for model_name, model_id in AIRCRAFT_MODELS.items():
+            current_task += 1
+            status_text.text(
+                f"Fetching {code} for {model_name} ({current_task}/{total_tasks})..."
+            )
+            fee_data = fetch_airport_fees(
+                code, model_name, model_id, date_str
+            )
+            results.append(fee_data)
+            progress_bar.progress(current_task / total_tasks)
+
+    status_text.success("Scraping completed for all models!")
 
     df = pd.DataFrame(results).astype(str)
     st.dataframe(df, use_container_width=True)
 
     csv_bytes = df.to_csv(index=False).encode("utf-8")
     st.download_button(
-        label="📥 Download Rates CSV",
+        label="📥 Download All Models Rates CSV",
         data=csv_bytes,
-        file_name=f"atlantic_{selected_model_name.lower().replace(' ', '_')}_rates_{target_date.strftime('%m_%d_%Y')}.csv",
+        file_name=f"atlantic_all_models_rates_{target_date.strftime('%m_%d_%Y')}.csv",
         mime="text/csv",
     )
