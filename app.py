@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
+# Streamlit Page Configuration
 st.set_page_config(
     page_title="Atlantic Aviation Fee Scraper",
     page_icon="✈",
@@ -14,8 +15,10 @@ st.write(
     "Direct API scraper targeting Atlantic Aviation's backend endpoint for ABQ and TUL."
 )
 
+# Target Airports
 AIRPORT_CODES = ["ABQ", "TUL"]
 
+# Sidebar Parameters
 st.sidebar.header("Scraper Parameters")
 make_model_id = st.sidebar.text_input("Lear 75 Model ID", "971")
 target_date = st.sidebar.date_input("Arrival Date", datetime.date.today())
@@ -31,7 +34,7 @@ HEADERS = {
 
 
 def parse_fee_payload(item):
-    """Parses raw items or dictionary blocks into formatted strings."""
+    """Parses raw primitive values, lists, or dictionary objects into clean string outputs."""
     if item is None:
         return "N/A"
 
@@ -48,7 +51,7 @@ def parse_fee_payload(item):
         return " ".join(valid) if valid else "N/A"
 
     if isinstance(item, dict):
-        # 1. Direct message strings (e.g., hourlyHangarMessage, hourlyParkingMessage)
+        # 1. Look for direct message string keys
         msg = (
             item.get("hourlyHangarMessage")
             or item.get("hourlyParkingMessage")
@@ -62,7 +65,7 @@ def parse_fee_payload(item):
         if msg:
             return parse_fee_payload(msg)
 
-        # 2. Extract numeric unitPrice/amount when present
+        # 2. Extract unitPrice / amount numerical keys
         unit_price = (
             item.get("unitPrice")
             if "unitPrice" in item
@@ -90,11 +93,12 @@ def parse_fee_payload(item):
                 else str(unit_price).strip()
             )
 
-            # If comment provides additional rate structure (e.g., '/hr'), append it
+            # Standardize output for simple unitPrice + standard label objects
             if comment_str and comment_str.lower() not in [
                 "security fee",
                 "facility fee",
                 "hangar fee",
+                "parking fee",
             ]:
                 if formatted_price not in comment_str:
                     return parse_fee_payload(f"{formatted_price} {comment_str}")
@@ -105,7 +109,7 @@ def parse_fee_payload(item):
         if comment_str:
             return parse_fee_payload(comment_str)
 
-        # Fallback for nested dicts
+        # Fallback dictionary key traversal
         collected = []
         for v in item.values():
             res = parse_fee_payload(v)
@@ -117,9 +121,14 @@ def parse_fee_payload(item):
 
 
 def extract_gallons_string(item):
-    """Extracts gallons needed to waive facility fee."""
+    """Extracts gallons needed to waive facility fee without dollar formatting."""
     if isinstance(item, dict):
-        gallons = item.get("unitPrice") or item.get("amount") or item.get("value")
+        gallons = (
+            item.get("unitPrice")
+            or item.get("amount")
+            or item.get("value")
+            or item.get("gallons")
+        )
         if gallons is not None:
             return f"{int(gallons)}" if gallons == int(gallons) else f"{gallons}"
         return parse_fee_payload(item.get("comment"))
@@ -139,7 +148,9 @@ def fetch_airport_fees(code, model_id, date_val):
     }
 
     try:
-        response = requests.get(api_url, params=params, headers=HEADERS, timeout=10)
+        response = requests.get(
+            api_url, params=params, headers=HEADERS, timeout=10
+        )
         if response.status_code == 200:
             data = response.json()
 
@@ -150,17 +161,25 @@ def fetch_airport_fees(code, model_id, date_val):
             return {
                 "Airport Code": str(code),
                 "Arrival Date": str(date_val),
-                "Facility Fee": parse_fee_payload(data.get("facilityFee")),
+                "Facility Fee": parse_fee_payload(
+                    data.get("facilityFee") or data.get("facility")
+                ),
                 "Gallons to Waive": extract_gallons_string(
                     data.get("gallonsNeededToWaiveFacilityFee")
+                    or data.get("gallonsToWaive")
                 ),
                 "Hangar": parse_fee_payload(
-                    data.get("hourlyHangarMessage") or data.get("hangarFee")
+                    data.get("hourlyHangarMessage")
+                    or data.get("hangarMessage")
+                    or data.get("hangarFee")
                 ),
-                "Security Fee": parse_fee_payload(data.get("securityFee")),
+                "Security Fee": parse_fee_payload(
+                    data.get("securityFee") or data.get("security")
+                ),
                 "Regular Parking": parse_fee_payload(
                     data.get("hourlyParkingMessage")
                     or data.get("dailyParkingMessage")
+                    or data.get("parkingMessage")
                     or data.get("parkingFee")
                 ),
             }
@@ -186,6 +205,7 @@ def fetch_airport_fees(code, model_id, date_val):
         }
 
 
+# Execution Loop
 if st.button("🚀 Fetch Fee Data"):
     results = []
     progress_bar = st.progress(0)
