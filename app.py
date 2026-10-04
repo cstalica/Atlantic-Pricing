@@ -10,7 +10,7 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("✈️ Atlantic Aviation Lear 75 Detailed Fee Scraper")
+st.title("✈️ Atlantic Aviation Detailed Fee Scraper")
 st.write(
     "Direct API scraper targeting Atlantic Aviation's Umbraco backend endpoint for ABQ and TUL airports."
 )
@@ -18,19 +18,18 @@ st.write(
 # Target Airports
 AIRPORT_CODES = ["ABQ", "TUL"]
 
-# Model Name to Internal ID Mapping
+# Selected Aircraft Models & Internal Umbraco IDs
 AIRCRAFT_MODELS = {
     "Lear 75": "971",
-    "Lear 45": "968",
-    "Lear 60": "970",
-    "Citation Excel": "854",
     "Challenger 300": "812",
+    "Challenger 350": "813",
+    "Citation Latitude": "857",
 }
 
 # Sidebar Parameters
 st.sidebar.header("Scraper Parameters")
 
-# Model selection dropdown on the left sidebar using "Lear 75"
+# Dropdown menu restricted strictly to requested models
 selected_model_name = st.sidebar.selectbox(
     "Aircraft Model", options=list(AIRCRAFT_MODELS.keys()), index=0
 )
@@ -212,6 +211,7 @@ def fetch_airport_fees(code, model_id, date_val):
             except Exception:
                 return {
                     "Airport Code": str(code),
+                    "Aircraft Model": selected_model_name,
                     "Arrival Date": str(date_val),
                     "Facility Fee": "JSON Parsing Error",
                     "Gallons to Waive": "N/A",
@@ -279,6 +279,7 @@ def fetch_airport_fees(code, model_id, date_val):
 
             return {
                 "Airport Code": str(code),
+                "Aircraft Model": selected_model_name,
                 "Arrival Date": str(date_val),
                 "Facility Fee": str(facility_res),
                 "Gallons to Waive": str(gallons_res),
@@ -289,6 +290,7 @@ def fetch_airport_fees(code, model_id, date_val):
         else:
             return {
                 "Airport Code": str(code),
+                "Aircraft Model": selected_model_name,
                 "Arrival Date": str(date_val),
                 "Facility Fee": f"HTTP {response.status_code}",
                 "Gallons to Waive": "N/A",
@@ -300,6 +302,7 @@ def fetch_airport_fees(code, model_id, date_val):
     except Exception as e:
         return {
             "Airport Code": str(code),
+            "Aircraft Model": selected_model_name,
             "Arrival Date": str(date_val),
             "Facility Fee": f"Error: {str(e)}",
             "Gallons to Waive": "N/A",
@@ -331,6 +334,6 @@ if st.button("🚀 Fetch Fee Data"):
     st.download_button(
         label="📥 Download Rates CSV",
         data=csv_bytes,
-        file_name=f"atlantic_rates_{target_date}.csv",
+        file_name=f"atlantic_{selected_model_name.lower().replace(' ', '_')}_rates_{target_date}.csv",
         mime="text/csv",
     )
