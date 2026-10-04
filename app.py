@@ -32,49 +32,45 @@ HEADERS = {
 }
 
 
-def extract_price_value(item):
-    """Formats numeric dollar amounts safely from dicts, floats, ints, or strings."""
-    if isinstance(item, dict):
-        price = item.get("unitPrice") or item.get("amount") or item.get("price")
-        comment = item.get("comment") or item.get("rateComment") or ""
-        if price is not None and price != 0:
-            formatted_price = (
-                f"${price:,.0f}" if price == int(price) else f"${price:,.2f}"
-            )
-            return (
-                f"{formatted_price} {comment}".strip()
-                if comment
-                else formatted_price
-            )
-        return comment if comment else "N/A"
-    elif isinstance(item, (int, float)):
-        return f"${item:,.0f}" if item == int(item) else f"${item:,.2f}"
-    elif isinstance(item, str) and item.strip():
-        return item.strip()
-    return "N/A"
+def parse_fee_object(item):
+    """
+    Parses a fee item or list of fee items to extract both base price and hourly/additional comments.
+    Combines unitPrice ($377) and rateComment ('plus $31/hr') into a unified string.
+    """
+    if not item:
+        return "N/A"
 
+    # If the endpoint returns a list of items for a fee category
+    if isinstance(item, list):
+        base_price = None
+        comment = ""
+        for sub in item:
+            if isinstance(sub, dict):
+                p = sub.get("unitPrice") or sub.get("amount") or sub.get("price")
+                c = (
+                    sub.get("rateComment")
+                    or sub.get("comment")
+                    or sub.get("description")
+                    or sub.get("formattedRate")
+                )
+                if p is not None and p > 0 and base_price is None:
+                    base_price = p
+                if c and not comment:
+                    comment = str(c).strip()
 
-def extract_gallons_value(item):
-    """Extracts raw numeric gallon requirements without dollar signs."""
-    if isinstance(item, dict):
-        gallons = (
-            item.get("unitPrice")
-            or item.get("amount")
-            or item.get("gallons")
-            or item.get("value")
+        base_str = (
+            f"${base_price:,.0f}"
+            if base_price and base_price == int(base_price)
+            else (f"${base_price:,.2f}" if base_price else "")
         )
-        if gallons is not None:
-            return f"{int(gallons)}" if gallons == int(gallons) else f"{gallons}"
-        return item.get("comment", "N/A")
-    elif isinstance(item, (int, float)):
-        return f"{int(item)}" if item == int(item) else f"{item}"
-    elif isinstance(item, str) and item.strip():
-        return item.strip()
-    return "N/A"
 
+        if base_str and comment:
+            if base_str in comment:
+                return comment
+            return f"{base_str} {comment}".strip()
+        return base_str if base_str else (comment if comment else "N/A")
 
-def extract_hangar_value(item):
-    """Explicitly combines the base unitPrice ($377) and comment ('plus $31/hr') for Hangar fees."""
+    # If the item is a dictionary
     if isinstance(item, dict):
         base_price = (
             item.get("unitPrice")
@@ -100,7 +96,6 @@ def extract_hangar_value(item):
             )
 
         if base_str and comment:
-            # Avoid repeating the base price if the comment string already starts with or contains it
             if base_str in str(comment):
                 return str(comment).strip()
             return f"{base_str} {comment}".strip()
@@ -115,82 +110,27 @@ def extract_hangar_value(item):
         return f"${item:,.0f}" if item == int(item) else f"${item:,.2f}"
     elif isinstance(item, str) and item.strip():
         return item.strip()
+
     return "N/A"
 
 
-def extract_text_value(item):
-    """Extracts base price and combines it with comments for parking or general text fields."""
+def extract_gallons_value(item):
+    """Extracts raw numeric gallon requirements without dollar signs."""
     if isinstance(item, dict):
-        price = item.get("unitPrice") or item.get("amount") or item.get("price")
-        comment = (
-            item.get("comment")
-            or item.get("rateComment")
-            or item.get("description")
-            or item.get("formattedRate")
+        gallons = (
+            item.get("unitPrice")
+            or item.get("amount")
+            or item.get("gallons")
             or item.get("value")
-            or item.get("label")
-            or ""
         )
-
-        base_str = ""
-        if price is not None and price != 0:
-            base_str = (
-                f"${price:,.0f}" if price == int(price) else f"${price:,.2f}"
-            )
-
-        if base_str and comment:
-            if base_str in str(comment):
-                return str(comment).strip()
-            return f"{base_str} {comment}".strip()
-        elif base_str:
-            return base_str
-        elif comment:
-            return str(comment).strip()
-
-        return "N/A"
-
+        if gallons is not None:
+            return f"{int(gallons)}" if gallons == int(gallons) else f"{gallons}"
+        return item.get("comment", "N/A")
     elif isinstance(item, (int, float)):
-        return f"${item:,.0f}" if item == int(item) else f"${item:,.2f}"
+        return f"{int(item)}" if item == int(item) else f"{item}"
     elif isinstance(item, str) and item.strip():
         return item.strip()
     return "N/A"
-
-
-def find_in_data(data, keywords):
-    """Recursively traverses the JSON data tree to locate fields matching key terms."""
-    if isinstance(data, dict):
-        # 1. Direct key match
-        for key, val in data.items():
-            if any(kw.lower() in key.lower() for kw in keywords):
-                if val is not None:
-                    return val
-
-        # 2. Check label/name/comment/type fields inside a dictionary object
-        comment = (
-            data.get("comment")
-            or data.get("rateComment")
-            or data.get("name")
-            or data.get("label")
-            or data.get("title")
-            or data.get("type")
-            or ""
-        )
-        if any(kw.lower() in str(comment).lower() for kw in keywords):
-            return data
-
-        # 3. Recurse nested values
-        for val in data.values():
-            res = find_in_data(val, keywords)
-            if res is not None:
-                return res
-
-    elif isinstance(data, list):
-        for item in data:
-            res = find_in_data(item, keywords)
-            if res is not None:
-                return res
-
-    return None
 
 
 def fetch_airport_fees(code, model_id, date_val):
@@ -220,58 +160,45 @@ def fetch_airport_fees(code, model_id, date_val):
                     "Regular Parking": "N/A",
                 }
 
-            # 1. Facility Fee
-            raw_facility = find_in_data(
-                data, ["facilityFee", "facility fee", "facility"]
+            # Direct dictionary lookup with fallback parsing
+            facility_raw = (
+                data.get("facilityFee")
+                or data.get("FacilityFee")
+                or data.get("facility")
             )
-            facility_fee = extract_price_value(raw_facility)
-
-            # 2. Gallons Needed to Waive
-            raw_gallons = find_in_data(
-                data,
-                [
-                    "gallonsNeededToWaiveFacilityFee",
-                    "gallonsNeeded",
-                    "gallonsToWaive",
-                    "gallons",
-                    "waive",
-                ],
+            gallons_raw = (
+                data.get("gallonsNeededToWaiveFacilityFee")
+                or data.get("gallonsToWaive")
+                or data.get("WaiveGallons")
+                or data.get("gallonsNeeded")
             )
-            gallons_str = extract_gallons_value(raw_gallons)
-
-            # 3. Hangar Fee
-            raw_hangar = find_in_data(
-                data, ["hangarFee", "hangarRate", "hangar"]
+            hangar_raw = (
+                data.get("hangar")
+                or data.get("hangarFee")
+                or data.get("Hangar")
+                or data.get("hangarRate")
             )
-            hangar_fee = extract_hangar_value(raw_hangar)
-
-            # 4. Security Fee
-            raw_security = find_in_data(
-                data, ["securityFee", "security fee", "security"]
+            security_raw = (
+                data.get("securityFee")
+                or data.get("SecurityFee")
+                or data.get("security")
             )
-            security_fee = extract_price_value(raw_security)
-
-            # 5. Regular Parking
-            raw_parking = find_in_data(
-                data,
-                [
-                    "regularParking",
-                    "parkingFee",
-                    "parking",
-                    "overnightParking",
-                    "overnight",
-                ],
+            parking_raw = (
+                data.get("regularParking")
+                or data.get("RegularParking")
+                or data.get("parkingFee")
+                or data.get("parking")
+                or data.get("overnightParking")
             )
-            parking_fee = extract_text_value(raw_parking)
 
             return {
                 "Airport Code": code,
                 "Arrival Date": date_val,
-                "Facility Fee": facility_fee,
-                "Gallons to Waive": gallons_str,
-                "Hangar": hangar_fee,
-                "Security Fee": security_fee,
-                "Regular Parking": parking_fee,
+                "Facility Fee": parse_fee_object(facility_raw),
+                "Gallons to Waive": extract_gallons_value(gallons_raw),
+                "Hangar": parse_fee_object(hangar_raw),
+                "Security Fee": parse_fee_object(security_raw),
+                "Regular Parking": parse_fee_object(parking_raw),
             }
         else:
             return {
