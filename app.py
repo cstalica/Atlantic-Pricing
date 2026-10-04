@@ -1,65 +1,180 @@
 import datetime
+import re
 import pandas as pd
 import requests
 import streamlit as st
 from bs4 import BeautifulSoup
 
-# Configure Streamlit Page
+# Streamlit Page Config
 st.set_page_config(
-    page_title="Atlantic Aviation Pricing Scraper",
-    page_icon="✈️",
-    layout="wide",
+    page_title="Atlantic Aviation Fee Scraper", page_icon="✈️", layout="wide"
 )
 
-st.title("✈️ Atlantic Aviation Lear 75 Rate Scraper")
+st.title("✈️ Atlantic Aviation Lear 75 Detailed Fee Scraper")
 st.write(
-    "Automated tool to fetch trip planning rates for a Lear 75 across all Atlantic Aviation FBO locations."
+    "Extracts Facility Fee, Waive Gallons, Hangar, Security Fee, and Regular Parking for each airport."
 )
 
-# List of Atlantic Aviation ICAO / IATA location codes
 AIRPORT_CODES = [
+    "ABQ",
+    "ADS",
+    "AGC",
+    "ANC",
+    "ANE",
+    "APC",
+    "ASE",
+    "AUS",
+    "BAF",
+    "BCT",
+    "BDA",
+    "BDL",
+    "BDR",
+    "BED",
+    "BFL",
+    "BHM",
+    "BNA",
+    "BUR",
+    "CHS",
+    "CLE",
+    "CPR",
     "CRP",
+    "DAL",
+    "DJT",
+    "DTS",
+    "ELM",
+    "ELP",
+    "EUG",
+    "FAI",
+    "FAT",
+    "FMN",
+    "FRG",
+    "FXE",
+    "GCM",
+    "GPI",
+    "HDN",
+    "HNL",
+    "HOU",
+    "HPNE",
+    "HPNW",
+    "HYA",
+    "IAD",
+    "IAH",
+    "ILG",
+    "ITO",
+    "JAN",
+    "JZI",
+    "KOA",
+    "LAS",
+    "LAX",
+    "LGB",
+    "LIH",
+    "LIT",
+    "LNK",
+    "LNY",
+    "MCO",
+    "MDW",
+    "MKC",
+    "MMU",
+    "MSY",
+    "MTJ",
+    "OGG",
+    "OKC",
+    "OMA",
+    "OPF",
+    "ORH",
+    "ORL",
+    "OXC",
+    "PDK",
+    "PDX",
+    "PHF",
+    "PHL",
+    "PIT",
+    "PLS",
+    "PNE",
+    "PSP",
+    "PVD",
+    "PWA",
+    "PWK",
+    "RDU",
+    "RIL",
+    "RNO",
+    "SAF",
+    "SBA",
+    "SBN",
+    "SCK",
+    "SDF",
+    "SDL",
+    "SGJ",
+    "SJC",
+    "SKF",
+    "SLC",
+    "SMO",
+    "SRQ",
+    "SUA",
+    "SUN",
+    "SWF",
+    "SXM",
+    "TEB",
+    "TRM",
+    "TUL",
+    "TUS",
+    "UAO",
+    "UES",
     "6N5",
 ]
 
-# Sidebar inputs
+# Sidebar Parameters
 st.sidebar.header("Scraper Parameters")
 aircraft_model = st.sidebar.text_input("Aircraft Make & Model", "Lear 75")
 target_date = st.sidebar.date_input("Arrival Date", datetime.date.today())
-
 date_str = target_date.strftime("%m/%d/%Y")
 
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36"
-    )
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
 
-def fetch_location_pricing(code, aircraft, date_val):
-    """Query individual Atlantic Aviation location page for pricing data."""
+def parse_fee(soup, title):
+    """Finds a fee header by text and extracts the corresponding value below it."""
+    try:
+        # Locate header matching fee name
+        header = soup.find(
+            lambda tag: tag.name in ["h3", "h4", "div", "strong", "b", "p"]
+            and title.lower() in tag.text.strip().lower()
+        )
+        if header:
+            # Extract text from the adjacent or parent elements
+            sibling = header.find_next_sibling()
+            if sibling:
+                return sibling.text.strip()
+            parent = header.parent
+            text = parent.text.replace(header.text, "").strip()
+            return text if text else "N/A"
+    except Exception:
+        pass
+    return "N/A"
+
+
+def fetch_airport_fees(code, aircraft, date_val):
     url = f"https://www.atlanticaviation.com/locations/{code}#tripplanning"
     params = {"aircraft": aircraft, "date": date_val}
 
     try:
-        response = requests.get(
-            url, headers=HEADERS, params=params, timeout=10
-        )
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, "html.parser")
-
-            # Extract pricing elements if dynamically rendered server-side
-            price_elem = soup.find("div", class_="pricing-details") or soup.find(
-                "span", class_="rate"
-            )
-            rate = price_elem.text.strip() if price_elem else "N/A"
+        res = requests.get(url, headers=HEADERS, params=params, timeout=12)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, "html.parser")
 
             return {
                 "Airport Code": code,
                 "Aircraft": aircraft,
                 "Arrival Date": date_val,
-                "Rate / Status": rate,
+                "Facility Fee": parse_fee(soup, "Facility Fee"),
+                "Gallons to Waive": parse_fee(
+                    soup, "Gallons Needed to Waive"
+                ),
+                "Hangar": parse_fee(soup, "Hangar"),
+                "Security Fee": parse_fee(soup, "Security Fee"),
+                "Regular Parking": parse_fee(soup, "Regular Parking"),
                 "URL": url,
             }
         else:
@@ -67,7 +182,11 @@ def fetch_location_pricing(code, aircraft, date_val):
                 "Airport Code": code,
                 "Aircraft": aircraft,
                 "Arrival Date": date_val,
-                "Rate / Status": f"HTTP {response.status_code}",
+                "Facility Fee": f"HTTP {res.status_code}",
+                "Gallons to Waive": "N/A",
+                "Hangar": "N/A",
+                "Security Fee": "N/A",
+                "Regular Parking": "N/A",
                 "URL": url,
             }
     except Exception as e:
@@ -75,38 +194,40 @@ def fetch_location_pricing(code, aircraft, date_val):
             "Airport Code": code,
             "Aircraft": aircraft,
             "Arrival Date": date_val,
-            "Rate / Status": f"Error: {str(e)}",
+            "Facility Fee": f"Error: {str(e)}",
+            "Gallons to Waive": "N/A",
+            "Hangar": "N/A",
+            "Security Fee": "N/A",
+            "Regular Parking": "N/A",
             "URL": url,
         }
 
 
-if st.button("🚀 Fetch Pricing Data"):
+if st.button("🚀 Fetch Fee Data"):
     results = []
     progress_bar = st.progress(0)
     status_text = st.empty()
 
-    total_airports = len(AIRPORT_CODES)
-
+    total = len(AIRPORT_CODES)
     for idx, code in enumerate(AIRPORT_CODES):
         status_text.text(
-            f"Fetching {code} ({idx + 1}/{total_airports}) for {aircraft_model}..."
+            f"Fetching {code} ({idx + 1}/{total}) for {aircraft_model}..."
         )
-        data = fetch_location_pricing(code, aircraft_model, date_str)
+        data = fetch_airport_fees(code, aircraft_model, date_str)
         results.append(data)
-        progress_bar.progress((idx + 1) / total_airports)
+        progress_bar.progress((idx + 1) / total)
 
-    status_text.success("Scraping completed!")
-
+    status_text.success("Complete!")
     df = pd.DataFrame(results)
 
-    # Display results table
+    # Display dataset
     st.dataframe(df, use_container_width=True)
 
-    # Download CSV button
-    csv_data = df.to_csv(index=False).encode("utf-8")
+    # Download CSV
+    csv_bytes = df.to_csv(index=False).encode("utf-8")
     st.download_button(
-        label="📥 Download Data as CSV",
-        data=csv_data,
-        file_name=f"atlantic_aviation_{aircraft_model.replace(' ', '_')}_{target_date}.csv",
+        label="📥 Download Detailed CSV",
+        data=csv_bytes,
+        file_name=f"atlantic_aviation_fees_{aircraft_model.replace(' ', '_')}_{target_date}.csv",
         mime="text/csv",
     )
