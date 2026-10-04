@@ -10,13 +10,119 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("✈️️ Atlantic Aviation Detailed Fee Scraper")
+st.title("✈️ Atlantic Aviation Detailed Fee Scraper")
 st.write(
-    "Direct API scraper targeting Atlantic Aviation's Umbraco backend endpoint for ABQ and TUL airports across all aircraft models."
+    "Direct API scraper targeting Atlantic Aviation's Umbraco backend endpoint for your custom airport list and aircraft models."
 )
 
-# Target Airports
-AIRPORT_CODES = ["ABQ", "TUL"]
+# Custom Target Airports List
+AIRPORT_CODES = [
+    "ABQ",
+    "ADS",
+    "AGC",
+    "ANC",
+    "ANE",
+    "APC",
+    "ASE",
+    "AUS",
+    "BAF",
+    "BCT",
+    "BDA",
+    "BDL",
+    "BDR",
+    "BED",
+    "BFL",
+    "BHM",
+    "BNA",
+    "BUR",
+    "CHS",
+    "CLE",
+    "CPR",
+    "CRP",
+    "DAL",
+    "DJT",
+    "DTS",
+    "ELM",
+    "ELP",
+    "EUG",
+    "FAI",
+    "FAT",
+    "FMN",
+    "FRG",
+    "FXE",
+    "GCM",
+    "GPI",
+    "HDN",
+    "HNL",
+    "HOU",
+    "HPNE",
+    "HPNW",
+    "HYA",
+    "IAD",
+    "IAH",
+    "ILG",
+    "ITO",
+    "JAN",
+    "JZI",
+    "KOA",
+    "LAS",
+    "LAX",
+    "LGB",
+    "LIH",
+    "LIT",
+    "LNK",
+    "LNY",
+    "MCO",
+    "MDW",
+    "MKC",
+    "MMU",
+    "MSY",
+    "MTJ",
+    "OGG",
+    "OKC",
+    "OMA",
+    "OPF",
+    "ORH",
+    "ORL",
+    "OXC",
+    "PDK",
+    "PDX",
+    "PHF",
+    "PHL",
+    "PIT",
+    "PLS",
+    "PNE",
+    "PSP",
+    "PVD",
+    "PWA",
+    "PWK",
+    "RDU",
+    "RIL",
+    "RNO",
+    "SAF",
+    "SBA",
+    "SBN",
+    "SCK",
+    "SDF",
+    "SDL",
+    "SGJ",
+    "SJC",
+    "SKF",
+    "SLC",
+    "SMO",
+    "SRQ",
+    "SUA",
+    "SUN",
+    "SWF",
+    "SXM",
+    "TEB",
+    "TRM",
+    "TUL",
+    "TUS",
+    "UAO",
+    "UES",
+    "6N5",
+]
 
 # All Aircraft Models & Internal Umbraco IDs
 AIRCRAFT_MODELS = {
@@ -40,7 +146,7 @@ show_raw_json = st.sidebar.checkbox(
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
-    "Referer": "https://www.atlanticaviation.com/locations/ABQ#tripplanning",
+    "Referer": "url?id=8",
 }
 
 
@@ -308,7 +414,7 @@ def fetch_airport_fees(code, model_name, model_id, date_val):
 
 
 # Streamlit UI Execution
-if st.button("🚀 Fetch All Models Fee Data"):
+if st.button("🚀 Fetch Complete Airport & Model Matrix"):
     results = []
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -320,7 +426,7 @@ if st.button("🚀 Fetch All Models Fee Data"):
         for model_name, model_id in AIRCRAFT_MODELS.items():
             current_task += 1
             status_text.text(
-                f"Fetching {code} for {model_name} ({current_task}/{total_tasks})..."
+                f"Fetching [{current_task}/{total_tasks}] -> Airport: {code} | Model: {model_name}"
             )
             fee_data = fetch_airport_fees(
                 code, model_name, model_id, date_str
@@ -328,15 +434,15 @@ if st.button("🚀 Fetch All Models Fee Data"):
             results.append(fee_data)
             progress_bar.progress(current_task / total_tasks)
 
-    status_text.success("Scraping completed for all models!")
+    status_text.success("Scraping completed for all airports and models!")
 
     df = pd.DataFrame(results).astype(str)
     st.dataframe(df, use_container_width=True)
 
     csv_bytes = df.to_csv(index=False).encode("utf-8")
     st.download_button(
-        label="📥 Download All Models Rates CSV",
+        label="📥 Download Full Matrix CSV",
         data=csv_bytes,
-        file_name=f"atlantic_all_models_rates_{target_date.strftime('%m_%d_%Y')}.csv",
+        file_name=f"atlantic_complete_matrix_{target_date.strftime('%m_%d_%Y')}.csv",
         mime="text/csv",
     )
