@@ -3,18 +3,24 @@ import pandas as pd
 import requests
 import streamlit as st
 
+# Configure Streamlit Page
 st.set_page_config(
-    page_title="Atlantic Aviation Rates Scraper", page_icon="✈️", layout="wide"
+    page_title="Atlantic Aviation Fee Scraper", page_icon="✈️", layout="wide"
 )
 
-st.title("✈️ Atlantic Aviation Lear 75 Fee Scraper")
+st.title("✈️ Atlantic Aviation Lear 75 Detailed Fee Scraper")
+st.write(
+    "Direct API scraper targeting Atlantic Aviation's Umbraco backend endpoint to extract Facility, Gallons, Hangar, Security, and Parking fees."
+)
 
+# Complete list of 107 Atlantic Aviation airport codes
 AIRPORT_CODES = [
     "ABQ",
-        "6N5",
+  
 ]
 
-st.sidebar.header("Parameters")
+# Sidebar Parameters
+st.sidebar.header("Scraper Parameters")
 make_model_id = st.sidebar.text_input("Lear 75 Model ID", "971")
 target_date = st.sidebar.date_input("Arrival Date", datetime.date.today())
 date_str = target_date.strftime("%Y-%m-%d")
@@ -22,12 +28,12 @@ date_str = target_date.strftime("%Y-%m-%d")
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
-    "Referer": "https://www.atlanticaviation.com/locations/",
+    "Referer": "https://www.atlanticaviation.com/locations/ABQ",
 }
 
 
 def extract_price_value(item):
-    """Safely formats dollar amounts from dicts, floats, ints, or strings."""
+    """Formats dollar amounts safely from dicts, floats, ints, or strings."""
     if isinstance(item, dict):
         price = item.get("unitPrice") or item.get("amount") or item.get("price")
         comment = item.get("comment", "")
@@ -42,7 +48,7 @@ def extract_price_value(item):
 
 
 def extract_gallons_value(item):
-    """Extracts raw numeric gallon requirements (without $ dollar signs)."""
+    """Extracts raw numeric gallon requirements without dollar signs."""
     if isinstance(item, dict):
         gallons = (
             item.get("unitPrice")
@@ -61,16 +67,18 @@ def extract_gallons_value(item):
 
 
 def extract_text_value(item):
-    """Extracts string values, hourly descriptions, or comment attributes."""
+    """Extracts text descriptions, comments, or combined hourly rate strings."""
     if isinstance(item, dict):
         comment = (
             item.get("comment")
             or item.get("description")
             or item.get("formattedRate")
             or item.get("value")
+            or item.get("label")
         )
-        if comment:
+        if comment and not isinstance(comment, (dict, list)):
             return str(comment).strip()
+
         price = item.get("unitPrice") or item.get("amount")
         if price is not None:
             return f"${price:,.0f}" if price == int(price) else f"${price:,.2f}"
@@ -82,10 +90,43 @@ def extract_text_value(item):
     return "N/A"
 
 
+def find_in_data(data, keywords):
+    """Recursively traverses the JSON data tree to locate fields matching key terms."""
+    if isinstance(data, dict):
+        # 1. Direct dictionary key match
+        for key, val in data.items():
+            if any(kw.lower() in key.lower() for kw in keywords):
+                if val is not None:
+                    return val
+
+        # 2. Match inside label, name, or comment field
+        comment = (
+            data.get("comment")
+            or data.get("name")
+            or data.get("label")
+            or data.get("title")
+            or ""
+        )
+        if any(kw.lower() in str(comment).lower() for kw in keywords):
+            return data
+
+        # 3. Recurse nested values
+        for val in data.values():
+            res = find_in_data(val, keywords)
+            if res is not None:
+                return res
+
+    elif isinstance(data, list):
+        for item in data:
+            res = find_in_data(item, keywords)
+            if res is not None:
+                return res
+
+    return None
+
+
 def fetch_airport_fees(code, model_id, date_val):
-    api_url = (
-        "https://www.atlanticaviation.com/umbraco/api/FacilityLookup/Get"
-    )
+    api_url = "https://www.atlanticaviation.com/umbraco/api/FacilityLookup/Get"
     params = {
         "aiportCode": code,
         "makeModelid": model_id,
@@ -111,58 +152,47 @@ def fetch_airport_fees(code, model_id, date_val):
                     "Regular Parking": "N/A",
                 }
 
-            if isinstance(data, list) and len(data) > 0:
-                data = data[0]
-
-            if not isinstance(data, dict):
-                return {
-                    "Airport Code": code,
-                    "Arrival Date": date_val,
-                    "Facility Fee": "Not Available",
-                    "Gallons to Waive": "N/A",
-                    "Hangar": "N/A",
-                    "Security Fee": "N/A",
-                    "Regular Parking": "N/A",
-                }
-
-            # 1. Facility Fee
-            facility_fee = extract_price_value(
-                data.get("facilityFee") or data.get("FacilityFee")
+            # Extract Facility Fee
+            raw_facility = find_in_data(
+                data, ["facilityFee", "facility fee", "facility"]
             )
+            facility_fee = extract_price_value(raw_facility)
 
-            # 2. Gallons Needed to Waive Facility Fee
-            raw_gallons = (
-                data.get("gallonsNeededToWaiveFacilityFee")
-                or data.get("gallonsToWaive")
-                or data.get("WaiveGallons")
-                or data.get("gallonsNeeded")
+            # Extract Gallons to Waive
+            raw_gallons = find_in_data(
+                data,
+                [
+                    "gallonsNeededToWaiveFacilityFee",
+                    "gallonsNeeded",
+                    "gallonsToWaive",
+                    "gallons",
+                    "waive",
+                ],
             )
             gallons_str = extract_gallons_value(raw_gallons)
 
-            # 3. Hangar Fee
-            raw_hangar = (
-                data.get("hangar")
-                or data.get("Hangar")
-                or data.get("hangarFee")
-                or data.get("hangarRate")
+            # Extract Hangar Fee
+            raw_hangar = find_in_data(
+                data, ["hangarFee", "hangarRate", "hangar"]
             )
             hangar_fee = extract_text_value(raw_hangar)
 
-            # 4. Security Fee
-            raw_security = (
-                data.get("securityFee")
-                or data.get("SecurityFee")
-                or data.get("security")
+            # Extract Security Fee
+            raw_security = find_in_data(
+                data, ["securityFee", "security fee", "security"]
             )
             security_fee = extract_price_value(raw_security)
 
-            # 5. Regular Parking
-            raw_parking = (
-                data.get("regularParking")
-                or data.get("RegularParking")
-                or data.get("parkingFee")
-                or data.get("parking")
-                or data.get("overnightParking")
+            # Extract Regular Parking
+            raw_parking = find_in_data(
+                data,
+                [
+                    "regularParking",
+                    "parkingFee",
+                    "parking",
+                    "overnightParking",
+                    "overnight",
+                ],
             )
             parking_fee = extract_text_value(raw_parking)
 
