@@ -21,9 +21,9 @@ AIRPORT_CODES = ["ABQ", "TUL"]
 # Selected Aircraft Models & Internal Umbraco IDs
 AIRCRAFT_MODELS = {
     "Lear 75": "971",
-    "Challenger 300": "812",
-    "Challenger 350": "813",
-    "Citation Latitude": "857",
+    "Challenger 300": "741",
+    "Challenger 350": "984",
+    "Citation Latitude": "996",
 }
 
 # Sidebar Parameters
@@ -31,9 +31,14 @@ st.sidebar.header("Scraper Parameters")
 
 # Dropdown menu restricted strictly to requested models
 selected_model_name = st.sidebar.selectbox(
-    "Aircraft Model", options=list(AIRCRAFT_MODELS.keys()), index=0
+    "Aircraft Model", options=list(AIRCRAFT_MODELS.keys()), index=3
 )
-make_model_id = AIRCRAFT_MODELS[selected_model_name]
+
+# Allow manual override for model ID if needed for troubleshooting
+make_model_id = st.sidebar.text_input(
+    "Make/Model ID (Override if needed)",
+    value=AIRCRAFT_MODELS[selected_model_name],
+)
 
 target_date = st.sidebar.date_input("Arrival Date", datetime.date.today())
 date_str = target_date.strftime("%Y-%m-%d")
@@ -45,7 +50,7 @@ show_raw_json = st.sidebar.checkbox(
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
-    "Referer": "https://www.atlanticaviation.com/locations/ABQ",
+    "Referer": "https://www.atlanticaviation.com/locations/ABQ#tripplanning",
 }
 
 
