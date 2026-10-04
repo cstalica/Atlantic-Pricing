@@ -7,7 +7,7 @@ import streamlit as st
 st.set_page_config(
     page_title="Atlantic Aviation Fee Scraper",
     page_icon="✈️",
-    layout="wide"
+    layout="wide",
 )
 
 st.title("✈️ Atlantic Aviation Lear 75 Detailed Fee Scraper")
@@ -24,7 +24,9 @@ make_model_id = st.sidebar.text_input("Lear 75 Model ID", "971")
 target_date = st.sidebar.date_input("Arrival Date", datetime.date.today())
 date_str = target_date.strftime("%Y-%m-%d")
 
-show_raw_json = st.sidebar.checkbox("Show Raw JSON Payload for Debugging", value=False)
+show_raw_json = st.sidebar.checkbox(
+    "Show Raw JSON Payload for Debugging", value=False
+)
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -34,15 +36,17 @@ HEADERS = {
 
 
 def parse_fee_payload(item):
-    """
-    Recursively parses primitives, dicts, or lists from Atlantic's payload.
-    Combines base numeric prices ($377) with rate comments ('plus $31/hr').
+    """Recursively parses primitives, dicts, or lists from Atlantic's payload.
+
+    Cleans line breaks (\\n) into spaces and resolves direct message keys.
     """
     if item is None:
         return "N/A"
 
     if isinstance(item, str):
-        val = item.strip()
+        # Clean newline characters (\n) and redundant spaces
+        val = item.replace("\n", " ").strip()
+        val = " ".join(val.split())
         return val if val else "N/A"
 
     if isinstance(item, (int, float)):
@@ -54,6 +58,22 @@ def parse_fee_payload(item):
         return " ".join(valid_items) if valid_items else "N/A"
 
     if isinstance(item, dict):
+        # 1. Check for explicit string message fields returned in Atlantic's JSON payload
+        msg = (
+            item.get("hourlyParkingMessage")
+            or item.get("dailyParkingMessage")
+            or item.get("parkingMessage")
+            or item.get("hangarMessage")
+            or item.get("rateComment")
+            or item.get("comment")
+            or item.get("description")
+            or item.get("formattedRate")
+            or item.get("text")
+        )
+        if msg:
+            return parse_fee_payload(msg)
+
+        # 2. Reconstruct numeric base price + rate comment if split across dict keys
         base_price = (
             item.get("unitPrice")
             or item.get("amount")
@@ -67,14 +87,16 @@ def parse_fee_payload(item):
             item.get("rateComment")
             or item.get("comment")
             or item.get("description")
-            or item.get("formattedRate")
-            or item.get("text")
             or ""
         )
 
         base_str = ""
         if isinstance(base_price, (int, float)) and base_price != 0:
-            base_str = f"${base_price:,.0f}" if base_price == int(base_price) else f"${base_price:,.2f}"
+            base_str = (
+                f"${base_price:,.0f}"
+                if base_price == int(base_price)
+                else f"${base_price:,.2f}"
+            )
         elif isinstance(base_price, str) and base_price.strip():
             base_str = base_price.strip()
 
@@ -82,14 +104,14 @@ def parse_fee_payload(item):
 
         if base_str and comment_str:
             if base_str in comment_str:
-                return comment_str
-            return f"{base_str} {comment_str}".strip()
+                return parse_fee_payload(comment_str)
+            return parse_fee_payload(f"{base_str} {comment_str}")
         elif base_str:
-            return base_str
+            return parse_fee_payload(base_str)
         elif comment_str:
-            return comment_str
+            return parse_fee_payload(comment_str)
 
-        # Fallback recursive extraction across all dict values if specific keys are missing
+        # 3. Fallback: traverse all dict values
         collected = []
         for v in item.values():
             extracted = parse_fee_payload(v)
@@ -102,7 +124,7 @@ def parse_fee_payload(item):
 
 
 def extract_gallons_string(item):
-    """Extracts gallons required without adding currency formatting ($)."""
+    """Extracts required gallons without dollar sign formatting."""
     if isinstance(item, dict):
         gallons = (
             item.get("unitPrice")
@@ -122,10 +144,7 @@ def extract_gallons_string(item):
 
 
 def find_key_recursive(data, target_substrings):
-    """
-    Traverses the JSON structure recursively to find any key containing target keywords
-    (e.g., 'hangar', 'facility', 'parking', 'security').
-    """
+    """Traverses JSON structure recursively to find keys containing target substrings."""
     if isinstance(data, dict):
         for key, value in data.items():
             if any(sub.lower() in key.lower() for sub in target_substrings):
@@ -145,8 +164,7 @@ def find_key_recursive(data, target_substrings):
 
 def fetch_airport_fees(code, model_id, date_val):
     api_url = "https://www.atlanticaviation.com/umbraco/api/FacilityLookup/Get"
-    
-    # Try both standard parameter variants in case of API parameter naming updates
+
     params = {
         "airportCode": code,
         "aiportCode": code,
@@ -156,7 +174,9 @@ def fetch_airport_fees(code, model_id, date_val):
     }
 
     try:
-        response = requests.get(api_url, params=params, headers=HEADERS, timeout=10)
+        response = requests.get(
+            api_url, params=params, headers=HEADERS, timeout=10
+        )
 
         if response.status_code == 200:
             try:
@@ -176,21 +196,50 @@ def fetch_airport_fees(code, model_id, date_val):
                 st.subheader(f"Raw Response Payload for {code}:")
                 st.json(data)
 
-            # Direct extraction with fallback key matching
-            facility_raw = data.get("facilityFee") or data.get("FacilityFee") or data.get("facility")
-            gallons_raw = data.get("gallonsNeededToWaiveFacilityFee") or data.get("gallonsToWaive") or data.get("WaiveGallons")
-            hangar_raw = data.get("hangarFee") or data.get("hangarFees") or data.get("hangar") or data.get("Hangar")
-            security_raw = data.get("securityFee") or data.get("SecurityFee") or data.get("security")
-            parking_raw = data.get("regularParking") or data.get("RegularParking") or data.get("parkingFee") or data.get("parking")
+            # Direct key extractions including new Message fields
+            facility_raw = (
+                data.get("facilityFee")
+                or data.get("FacilityFee")
+                or data.get("facility")
+            )
+            gallons_raw = (
+                data.get("gallonsNeededToWaiveFacilityFee")
+                or data.get("gallonsToWaive")
+                or data.get("WaiveGallons")
+            )
 
-            # Parse extracted values
+            hangar_raw = (
+                data.get("hangarMessage")
+                or data.get("hangarFee")
+                or data.get("hangarFees")
+                or data.get("hangar")
+                or data.get("Hangar")
+            )
+
+            security_raw = (
+                data.get("securityFee")
+                or data.get("SecurityFee")
+                or data.get("security")
+            )
+
+            parking_raw = (
+                data.get("hourlyParkingMessage")
+                or data.get("dailyParkingMessage")
+                or data.get("parkingMessage")
+                or data.get("regularParking")
+                or data.get("RegularParking")
+                or data.get("parkingFee")
+                or data.get("parking")
+            )
+
+            # Parse extracted raw values
             facility_res = parse_fee_payload(facility_raw)
             gallons_res = extract_gallons_string(gallons_raw)
             hangar_res = parse_fee_payload(hangar_raw)
             security_res = parse_fee_payload(security_raw)
             parking_res = parse_fee_payload(parking_raw)
 
-            # Recursive search fallback if direct key access returned N/A
+            # Recursive search fallback if direct key lookups return N/A
             if hangar_res == "N/A":
                 hangar_res = find_key_recursive(data, ["hangar"])
             if facility_res == "N/A":
@@ -198,7 +247,9 @@ def fetch_airport_fees(code, model_id, date_val):
             if security_res == "N/A":
                 security_res = find_key_recursive(data, ["security"])
             if parking_res == "N/A":
-                parking_res = find_key_recursive(data, ["parking", "overnight"])
+                parking_res = find_key_recursive(
+                    data, ["hourlyparking", "parking", "overnight"]
+                )
 
             return {
                 "Airport Code": str(code),
@@ -247,9 +298,7 @@ if st.button("🚀 Fetch Fee Data"):
 
     status_text.success("Scraping completed!")
 
-    # Cast to string explicitly to prevent Streamlit schema/formatting mismatch
     df = pd.DataFrame(results).astype(str)
-
     st.dataframe(df, use_container_width=True)
 
     csv_bytes = df.to_csv(index=False).encode("utf-8")
