@@ -3,126 +3,17 @@ import pandas as pd
 import requests
 import streamlit as st
 
-# Configure Streamlit Page
 st.set_page_config(
     page_title="Atlantic Aviation Rates Scraper", page_icon="✈️", layout="wide"
 )
 
 st.title("✈️ Atlantic Aviation Lear 75 Fee Scraper")
-st.write(
-    "Direct API scraper targeting Atlantic Aviation's Umbraco backend endpoint for Lear 75 pricing."
-)
 
-# Complete list of 107 Atlantic Aviation airport codes
 AIRPORT_CODES = [
     "ABQ",
-    "ADS",
-    "AGC",
-    "ANC",
-    "ANE",
-    "APC",
-    "ASE",
-    "AUS",
-    "BAF",
-    "BCT",
-    "BDA",
-    "BDL",
-    "BDR",
-    "BED",
-    "BFL",
-    "BHM",
-    "BNA",
-    "BUR",
-    "CHS",
-    "CLE",
-    "CPR",
-    "CRP",
-    "DAL",
-    "DJT",
-    "DTS",
-    "ELM",
-    "ELP",
-    "EUG",
-    "FAI",
-    "FAT",
-    "FMN",
-    "FRG",
-    "FXE",
-    "GCM",
-    "GPI",
-    "HDN",
-    "HNL",
-    "HOU",
-    "HPNE",
-    "HPNW",
-    "HYA",
-    "IAD",
-    "IAH",
-    "ILG",
-    "ITO",
-    "JAN",
-    "JZI",
-    "KOA",
-    "LAS",
-    "LAX",
-    "LGB",
-    "LIH",
-    "LIT",
-    "LNK",
-    "LNY",
-    "MCO",
-    "MDW",
-    "MKC",
-    "MMU",
-    "MSY",
-    "MTJ",
-    "OGG",
-    "OKC",
-    "OMA",
-    "OPF",
-    "ORH",
-    "ORL",
-    "OXC",
-    "PDK",
-    "PDX",
-    "PHF",
-    "PHL",
-    "PIT",
-    "PLS",
-    "PNE",
-    "PSP",
-    "PVD",
-    "PWA",
-    "PWK",
-    "RDU",
-    "RIL",
-    "RNO",
-    "SAF",
-    "SBA",
-    "SBN",
-    "SCK",
-    "SDF",
-    "SDL",
-    "SGJ",
-    "SJC",
-    "SKF",
-    "SLC",
-    "SMO",
-    "SRQ",
-    "SUA",
-    "SUN",
-    "SWF",
-    "SXM",
-    "TEB",
-    "TRM",
-    "TUL",
-    "TUS",
-    "UAO",
-    "UES",
-    "6N5",
+        "6N5",
 ]
 
-# Sidebar Parameters
 st.sidebar.header("Parameters")
 make_model_id = st.sidebar.text_input("Lear 75 Model ID", "971")
 target_date = st.sidebar.date_input("Arrival Date", datetime.date.today())
@@ -136,7 +27,7 @@ HEADERS = {
 
 
 def extract_price_value(item):
-    """Safely extracts unitPrice, amount, price, or text comments from returned JSON objects."""
+    """Safely formats dollar amounts from dicts, floats, ints, or strings."""
     if isinstance(item, dict):
         price = item.get("unitPrice") or item.get("amount") or item.get("price")
         comment = item.get("comment", "")
@@ -150,8 +41,51 @@ def extract_price_value(item):
     return "N/A"
 
 
+def extract_gallons_value(item):
+    """Extracts raw numeric gallon requirements (without $ dollar signs)."""
+    if isinstance(item, dict):
+        gallons = (
+            item.get("unitPrice")
+            or item.get("amount")
+            or item.get("gallons")
+            or item.get("value")
+        )
+        if gallons is not None:
+            return f"{int(gallons)}" if gallons == int(gallons) else f"{gallons}"
+        return item.get("comment", "N/A")
+    elif isinstance(item, (int, float)):
+        return f"{int(item)}" if item == int(item) else f"{item}"
+    elif isinstance(item, str) and item.strip():
+        return item.strip()
+    return "N/A"
+
+
+def extract_text_value(item):
+    """Extracts string values, hourly descriptions, or comment attributes."""
+    if isinstance(item, dict):
+        comment = (
+            item.get("comment")
+            or item.get("description")
+            or item.get("formattedRate")
+            or item.get("value")
+        )
+        if comment:
+            return str(comment).strip()
+        price = item.get("unitPrice") or item.get("amount")
+        if price is not None:
+            return f"${price:,.0f}" if price == int(price) else f"${price:,.2f}"
+        return "N/A"
+    elif isinstance(item, (int, float)):
+        return f"${item:,.0f}" if item == int(item) else f"${item:,.2f}"
+    elif isinstance(item, str) and item.strip():
+        return item.strip()
+    return "N/A"
+
+
 def fetch_airport_fees(code, model_id, date_val):
-    api_url = "https://www.atlanticaviation.com/umbraco/api/FacilityLookup/Get"
+    api_url = (
+        "https://www.atlanticaviation.com/umbraco/api/FacilityLookup/Get"
+    )
     params = {
         "aiportCode": code,
         "makeModelid": model_id,
@@ -191,27 +125,46 @@ def fetch_airport_fees(code, model_id, date_val):
                     "Regular Parking": "N/A",
                 }
 
-            # Parse individual fee attributes
+            # 1. Facility Fee
             facility_fee = extract_price_value(
                 data.get("facilityFee") or data.get("FacilityFee")
             )
 
-            gallons = (
+            # 2. Gallons Needed to Waive Facility Fee
+            raw_gallons = (
                 data.get("gallonsNeededToWaiveFacilityFee")
                 or data.get("gallonsToWaive")
                 or data.get("WaiveGallons")
+                or data.get("gallonsNeeded")
             )
-            gallons_str = f"{gallons}" if gallons is not None else "N/A"
+            gallons_str = extract_gallons_value(raw_gallons)
 
-            hangar_fee = extract_price_value(
-                data.get("hangar") or data.get("Hangar")
+            # 3. Hangar Fee
+            raw_hangar = (
+                data.get("hangar")
+                or data.get("Hangar")
+                or data.get("hangarFee")
+                or data.get("hangarRate")
             )
-            security_fee = extract_price_value(
-                data.get("securityFee") or data.get("SecurityFee")
+            hangar_fee = extract_text_value(raw_hangar)
+
+            # 4. Security Fee
+            raw_security = (
+                data.get("securityFee")
+                or data.get("SecurityFee")
+                or data.get("security")
             )
-            parking_fee = extract_price_value(
-                data.get("regularParking") or data.get("RegularParking")
+            security_fee = extract_price_value(raw_security)
+
+            # 5. Regular Parking
+            raw_parking = (
+                data.get("regularParking")
+                or data.get("RegularParking")
+                or data.get("parkingFee")
+                or data.get("parking")
+                or data.get("overnightParking")
             )
+            parking_fee = extract_text_value(raw_parking)
 
             return {
                 "Airport Code": code,
