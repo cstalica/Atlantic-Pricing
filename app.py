@@ -15,7 +15,12 @@ st.write(
 
 # Complete list of 107 Atlantic Aviation airport codes
 AIRPORT_CODES = [
-
+    "ABQ",
+    "TUL",
+    "TUS",
+    "UAO",
+    "UES",
+    "6N5",
 ]
 
 # Sidebar Parameters
