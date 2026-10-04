@@ -41,7 +41,8 @@ make_model_id = st.sidebar.text_input(
 )
 
 target_date = st.sidebar.date_input("Arrival Date", datetime.date.today())
-date_str = target_date.strftime("%Y-%m-%d")
+# Formatted as MM:DD:YY (e.g., 10:04:26)
+date_str = target_date.strftime("%m:%d:%y")
 
 show_raw_json = st.sidebar.checkbox(
     "Show Raw JSON Payload for Debugging", value=False
