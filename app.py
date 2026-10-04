@@ -12,7 +12,7 @@ st.set_page_config(
 
 st.title("✈️ Atlantic Aviation Detailed Fee Scraper")
 st.write(
-    "Direct API scraper targeting Atlantic Aviation's Umbraco backend endpoint for your custom airport list and aircraft models."
+    "Direct API scraper targeting Atlantic Aviation's Umbraco backend endpoint with flexible airport and aircraft selection."
 )
 
 # Custom Target Airports List
@@ -135,6 +135,30 @@ AIRCRAFT_MODELS = {
 # Sidebar Parameters
 st.sidebar.header("Scraper Parameters")
 
+# Airport Selection Mode
+airport_mode = st.sidebar.radio(
+    "Airport Selection", ["Single Airport", "All Airports"]
+)
+if airport_mode == "Single Airport":
+    selected_airport = st.sidebar.selectbox(
+        "Choose Airport", options=AIRPORT_CODES, index=0
+    )
+    active_airports = [selected_airport]
+else:
+    active_airports = AIRPORT_CODES
+
+# Aircraft Selection Mode
+aircraft_mode = st.sidebar.radio(
+    "Aircraft Selection", ["Single Aircraft", "All Aircraft"]
+)
+if aircraft_mode == "Single Aircraft":
+    selected_model_name = st.sidebar.selectbox(
+        "Choose Aircraft Model", options=list(AIRCRAFT_MODELS.keys()), index=3
+    )
+    active_models = {selected_model_name: AIRCRAFT_MODELS[selected_model_name]}
+else:
+    active_models = AIRCRAFT_MODELS
+
 target_date = st.sidebar.date_input("Arrival Date", datetime.date.today())
 # Formatted as MM/DD/YYYY (e.g., 10/04/2026)
 date_str = target_date.strftime("%m/%d/%Y")
@@ -146,7 +170,7 @@ show_raw_json = st.sidebar.checkbox(
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
-    "Referer": "url?id=8",
+    "Referer": "https://www.atlanticaviation.com/locations/ABQ#tripplanning",
 }
 
 
@@ -414,16 +438,16 @@ def fetch_airport_fees(code, model_name, model_id, date_val):
 
 
 # Streamlit UI Execution
-if st.button("🚀 Fetch Complete Airport & Model Matrix"):
+if st.button("🚀 Fetch Fee Data"):
     results = []
     progress_bar = st.progress(0)
     status_text = st.empty()
 
-    total_tasks = len(AIRPORT_CODES) * len(AIRCRAFT_MODELS)
+    total_tasks = len(active_airports) * len(active_models)
     current_task = 0
 
-    for code in AIRPORT_CODES:
-        for model_name, model_id in AIRCRAFT_MODELS.items():
+    for code in active_airports:
+        for model_name, model_id in active_models.items():
             current_task += 1
             status_text.text(
                 f"Fetching [{current_task}/{total_tasks}] -> Airport: {code} | Model: {model_name}"
@@ -434,15 +458,15 @@ if st.button("🚀 Fetch Complete Airport & Model Matrix"):
             results.append(fee_data)
             progress_bar.progress(current_task / total_tasks)
 
-    status_text.success("Scraping completed for all airports and models!")
+    status_text.success("Scraping completed!")
 
     df = pd.DataFrame(results).astype(str)
     st.dataframe(df, use_container_width=True)
 
     csv_bytes = df.to_csv(index=False).encode("utf-8")
     st.download_button(
-        label="📥 Download Full Matrix CSV",
+        label="📥 Download Rates CSV",
         data=csv_bytes,
-        file_name=f"atlantic_complete_matrix_{target_date.strftime('%m_%d_%Y')}.csv",
+        file_name=f"atlantic_fees_{target_date.strftime('%m_%d_%Y')}.csv",
         mime="text/csv",
     )
