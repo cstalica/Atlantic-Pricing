@@ -3,9 +3,9 @@ import pandas as pd
 import requests
 import streamlit as st
 
-# Configure Streamlit Page
+# Streamlit Page Config
 st.set_page_config(
-    page_title="Atlantic Aviation Fee Scraper", page_icon="✈️", layout="wide"
+    page_title="Atlantic Aviation Fee Scraper", page_icon="✈️️", layout="wide"
 )
 
 st.title("✈️ Atlantic Aviation Lear 75 Detailed Fee Scraper")
@@ -15,8 +15,7 @@ st.write(
 
 # Complete list of 107 Atlantic Aviation airport codes
 AIRPORT_CODES = [
-    "ABQ",
-  
+
 ]
 
 # Sidebar Parameters
@@ -28,16 +27,16 @@ date_str = target_date.strftime("%Y-%m-%d")
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
-    "Referer": "https://www.atlanticaviation.com/locations/ABQ",
+    "Referer": "https://www.atlanticaviation.com/locations/ABQ#tripplanning",
 }
 
 
 def extract_price_value(item):
-    """Formats dollar amounts safely from dicts, floats, ints, or strings."""
+    """Formats numeric dollar amounts safely from dicts, floats, ints, or strings."""
     if isinstance(item, dict):
         price = item.get("unitPrice") or item.get("amount") or item.get("price")
-        comment = item.get("comment", "")
-        if price is not None:
+        comment = item.get("comment") or item.get("rateComment") or ""
+        if price is not None and price != 0:
             return f"${price:,.0f}" if price == int(price) else f"${price:,.2f}"
         return comment if comment else "N/A"
     elif isinstance(item, (int, float)):
@@ -67,20 +66,21 @@ def extract_gallons_value(item):
 
 
 def extract_text_value(item):
-    """Extracts text descriptions, comments, or combined hourly rate strings."""
+    """Safely extracts text descriptions, hourly rates (e.g. '$377 plus $31/hr'), or comments."""
     if isinstance(item, dict):
         comment = (
             item.get("comment")
+            or item.get("rateComment")
             or item.get("description")
             or item.get("formattedRate")
             or item.get("value")
             or item.get("label")
         )
-        if comment and not isinstance(comment, (dict, list)):
-            return str(comment).strip()
+        if comment and isinstance(comment, str) and comment.strip():
+            return comment.strip()
 
-        price = item.get("unitPrice") or item.get("amount")
-        if price is not None:
+        price = item.get("unitPrice") or item.get("amount") or item.get("price")
+        if price is not None and price != 0:
             return f"${price:,.0f}" if price == int(price) else f"${price:,.2f}"
         return "N/A"
     elif isinstance(item, (int, float)):
@@ -93,15 +93,16 @@ def extract_text_value(item):
 def find_in_data(data, keywords):
     """Recursively traverses the JSON data tree to locate fields matching key terms."""
     if isinstance(data, dict):
-        # 1. Direct dictionary key match
+        # 1. Direct key match
         for key, val in data.items():
             if any(kw.lower() in key.lower() for kw in keywords):
                 if val is not None:
                     return val
 
-        # 2. Match inside label, name, or comment field
+        # 2. Check label/name/comment fields inside a dictionary object
         comment = (
             data.get("comment")
+            or data.get("rateComment")
             or data.get("name")
             or data.get("label")
             or data.get("title")
@@ -152,13 +153,13 @@ def fetch_airport_fees(code, model_id, date_val):
                     "Regular Parking": "N/A",
                 }
 
-            # Extract Facility Fee
+            # 1. Facility Fee
             raw_facility = find_in_data(
                 data, ["facilityFee", "facility fee", "facility"]
             )
             facility_fee = extract_price_value(raw_facility)
 
-            # Extract Gallons to Waive
+            # 2. Gallons Needed to Waive
             raw_gallons = find_in_data(
                 data,
                 [
@@ -171,19 +172,19 @@ def fetch_airport_fees(code, model_id, date_val):
             )
             gallons_str = extract_gallons_value(raw_gallons)
 
-            # Extract Hangar Fee
+            # 3. Hangar Fee
             raw_hangar = find_in_data(
                 data, ["hangarFee", "hangarRate", "hangar"]
             )
             hangar_fee = extract_text_value(raw_hangar)
 
-            # Extract Security Fee
+            # 4. Security Fee
             raw_security = find_in_data(
                 data, ["securityFee", "security fee", "security"]
             )
             security_fee = extract_price_value(raw_security)
 
-            # Extract Regular Parking
+            # 5. Regular Parking
             raw_parking = find_in_data(
                 data,
                 [
