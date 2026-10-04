@@ -41,8 +41,8 @@ make_model_id = st.sidebar.text_input(
 )
 
 target_date = st.sidebar.date_input("Arrival Date", datetime.date.today())
-# Formatted as MM:DD:YY (e.g., 10:04:26)
-date_str = target_date.strftime("%m:%d:%y")
+# Formatted as MM/DD/YY (e.g., 10/04/26)
+date_str = target_date.strftime("%m/%d/%y")
 
 show_raw_json = st.sidebar.checkbox(
     "Show Raw JSON Payload for Debugging", value=False
@@ -51,7 +51,7 @@ show_raw_json = st.sidebar.checkbox(
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
-    "Referer": "https://www.atlanticaviation.com/locations/ABQ#tripplanning",
+    "Referer": "url?id=5",
 }
 
 
@@ -340,6 +340,6 @@ if st.button("🚀 Fetch Fee Data"):
     st.download_button(
         label="📥 Download Rates CSV",
         data=csv_bytes,
-        file_name=f"atlantic_{selected_model_name.lower().replace(' ', '_')}_rates_{target_date}.csv",
+        file_name=f"atlantic_{selected_model_name.lower().replace(' ', '_')}_rates_{target_date.strftime('%m_%d_%y')}.csv",
         mime="text/csv",
     )
